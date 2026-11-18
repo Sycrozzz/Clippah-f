@@ -34,6 +34,7 @@ jobs:
         run: npm run desktop:prepare
 
       
+     
       - name: Download portable PostgreSQL for Windows
         shell: pwsh
         run: |
@@ -49,22 +50,33 @@ jobs:
 
           Expand-Archive -Path $archive -DestinationPath $extract -Force
 
+          # Find the actual PostgreSQL bin directory.
           $initdb = Get-ChildItem -Path $extract -Filter initdb.exe -Recurse |
             Select-Object -First 1
 
           if (-not $initdb) {
-            throw 'PostgreSQL initdb.exe was not found.'
+            throw "initdb.exe was not found in the PostgreSQL archive."
           }
 
-          # The PostgreSQL root is the parent of the bin directory.
-          $pgBin = Split-Path $initdb.FullName -Parent
+          $pgBin = $initdb.Directory.FullName
           $pgRoot = Split-Path $pgBin -Parent
 
-          Remove-Item 'desktop/postgres' -Recurse -Force -ErrorAction SilentlyContinue
+          Write-Host "PostgreSQL root: $pgRoot"
+          Write-Host "PostgreSQL bin: $pgBin"
+
+          # Recreate the destination folder.
+          if (Test-Path 'desktop/postgres') {
+            Remove-Item 'desktop/postgres' -Recurse -Force
+          }
+
           New-Item -ItemType Directory -Force -Path 'desktop/postgres' | Out-Null
 
-          Copy-Item "$pgRoot/*" 'desktop/postgres' -Recurse -Force
+          # Copy the complete PostgreSQL distribution.
+          Copy-Item -Path "$pgRoot/*" `
+            -Destination 'desktop/postgres' `
+            -Recurse -Force
 
+          # Verify required executables.
           $required = @(
             'bin/initdb.exe',
             'bin/pg_ctl.exe',
@@ -77,24 +89,25 @@ jobs:
             $path = Join-Path 'desktop/postgres' $file
 
             if (-not (Test-Path $path)) {
-              throw "Missing PostgreSQL executable: $path"
+              throw "PostgreSQL download/copy failed: $path"
             }
 
             Write-Host "Verified: $path"
           }
 
           if (-not (Test-Path 'desktop/postgres/share')) {
-            throw 'PostgreSQL share directory is missing.'
+            throw 'PostgreSQL share folder missing.'
           }
 
           if (-not (Test-Path 'desktop/postgres/lib')) {
-            throw 'PostgreSQL lib directory is missing.'
+            throw 'PostgreSQL lib folder missing.'
           }
 
-          Write-Host 'PostgreSQL bundle is ready.'
+          Write-Host 'PostgreSQL distribution copied successfully.'
+
 
       - name: Build installer and portable executable
-        run: npm run desktop:dist
+        run: npx electron-builder --config electron-builder.yml --win nsis portable --x64 --publish never
         
       - name: Verify packaged PostgreSQL
         shell: pwsh
