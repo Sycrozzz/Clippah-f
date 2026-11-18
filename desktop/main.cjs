@@ -19,22 +19,44 @@ function resource(...parts) {
   return path.join(process.resourcesPath, ...parts);
 }
 
+
 function run(executable, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       windowsHide: true,
       ...options,
-      stdio: options.stdio || 'ignore',
+      stdio: options.stdio || ['ignore', 'pipe', 'pipe'],
     });
+
+    let stdout = '';
     let stderr = '';
-    if (child.stderr) child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    if (child.stdout) {
+      child.stdout.on('data', chunk => {
+        stdout += chunk.toString();
+      });
+    }
+
+    if (child.stderr) {
+      child.stderr.on('data', chunk => {
+        stderr += chunk.toString();
+      });
+    }
+
     child.once('error', reject);
-    child.once('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${path.basename(executable)} exited with code ${code}${stderr ? `: ${stderr.slice(-2000)}` : ''}`));
+
+    child.once('close', code => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(
+          `${path.basename(executable)} exited with code ${code}: ${stderr.slice(-2000)}`
+        ));
+      }
     });
   });
 }
+
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -62,35 +84,93 @@ async function waitFor(check, label, timeoutMs = 45000) {
   throw new Error(`Timed out waiting for ${label}${lastError ? `: ${lastError.message}` : ''}`);
 }
 
+
 async function startDatabase() {
   const bin = resource('postgres', 'bin');
+
   const dataDir = path.join(app.getPath('userData'), 'postgres');
   const logFile = path.join(app.getPath('userData'), 'postgres.log');
+
   const initdb = path.join(bin, 'initdb.exe');
   const pgCtl = path.join(bin, 'pg_ctl.exe');
+  const postgres = path.join(bin, 'postgres.exe');
   const psql = path.join(bin, 'psql.exe');
   const createdb = path.join(bin, 'createdb.exe');
 
-  for (const file of [initdb, pgCtl, psql, createdb]) {
-    if (!fs.existsSync(file)) throw new Error(`Bundled PostgreSQL executable is missing: ${file}`);
+  const required = [initdb, pgCtl, postgres, psql, createdb];
+
+  for (const file of required) {
+    if (!fs.existsSync(file)) {
+      throw new Error(
+        `Bundled PostgreSQL executable is missing: ${file}`
+      );
+    }
   }
+
+  const databaseEnv = {
+    ...process.env,
+    PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`,
+  };
+
   fs.mkdirSync(path.dirname(dataDir), { recursive: true });
+
   postgresPort = await freePort();
 
   if (!fs.existsSync(path.join(dataDir, 'PG_VERSION'))) {
-    await run(initdb, ['-D', dataDir, '-U', 'postgres', '--encoding=UTF8', '--auth-local=trust', '--auth-host=trust']);
+    await run(initdb, [
+      '-D', dataDir,
+      '-U', 'postgres',
+      '--encoding=UTF8',
+      '--auth-local=trust',
+      '--auth-host=trust'
+    ], { env: databaseEnv });
   }
 
-  await run(pgCtl, ['-D', dataDir, '-l', logFile, '-o', `-h 127.0.0.1 -p ${postgresPort}`, '-w', 'start']);
+  await run(pgCtl, [
+    '-D', dataDir,
+    '-l', logFile,
+    '-o', `-h 127.0.0.1 -p ${postgresPort}`,
+    '-w',
+    'start'
+  ], { env: databaseEnv });
+
   postgresProcess = { pgCtl, dataDir };
 
-  const env = { ...process.env, PGHOST: '127.0.0.1', PGPORT: String(postgresPort), PGUSER: 'postgres' };
-  const existingDb = await run(psql, ['-h', '127.0.0.1', '-p', String(postgresPort), '-U', 'postgres', '-d', 'postgres', '-tAc', "SELECT 1 FROM pg_database WHERE datname = 'clippahh'"], { env });
+  const env = {
+    ...databaseEnv,
+    PGHOST: '127.0.0.1',
+    PGPORT: String(postgresPort),
+    PGUSER: 'postgres',
+  };
+
+  const existingDb = await run(psql, [
+    '-h', '127.0.0.1',
+    '-p', String(postgresPort),
+    '-U', 'postgres',
+    '-d', 'postgres',
+    '-tAc',
+    "SELECT 1 FROM pg_database WHERE datname = 'clippahh'"
+  ], { env });
+
   if (!existingDb.stdout.trim()) {
-    await run(createdb, ['-h', '127.0.0.1', '-p', String(postgresPort), '-U', 'postgres', 'clippahh'], { env });
+    await run(createdb, [
+      '-h', '127.0.0.1',
+      '-p', String(postgresPort),
+      '-U', 'postgres',
+      'clippahh'
+    ], { env });
   }
-  await run(psql, ['-h', '127.0.0.1', '-p', String(postgresPort), '-U', 'postgres', '-d', 'clippahh', '-v', 'ON_ERROR_STOP=1', '-f', resource('clippahh-schema.sql')], { env });
+
+  await run(psql, [
+    '-h', '127.0.0.1',
+    '-p', String(postgresPort),
+    '-U', 'postgres',
+    '-d', 'clippahh',
+    '-v', 'ON_ERROR_STOP=1',
+    '-f', resource('clippahh-schema.sql')
+  ], { env });
 }
+
 
 async function startNextServer() {
   appPort = await freePort();
