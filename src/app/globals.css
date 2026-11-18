@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-panel2: var(--c-panel2);
+  --color-line: var(--c-line);
+  --color-fg: var(--c-fg);
+  --color-muted: var(--c-muted);
+  --color-accent: var(--c-accent);
+  --color-accent2: var(--c-accent2);
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+}
+
+:root,
+[data-theme="dark"] {
+  --c-bg: #0b0c10;
+  --c-panel: #12141a;
+  --c-panel2: #1a1d26;
+  --c-line: #262a36;
+  --c-fg: #e9ebf2;
+  --c-muted: #8a90a2;
+  --c-accent: #7c6cff;
+  --c-accent2: #22d3ee;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --c-bg: #f4f5f9;
+  --c-panel: #ffffff;
+  --c-panel2: #eceef5;
+  --c-line: #d9dce8;
+  --c-fg: #14161f;
+  --c-muted: #626879;
+  --c-accent: #5b49f0;
+  --c-accent2: #0891b2;
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-line) transparent;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fade-up {
+  animation: fadeUp 0.25s ease both;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c-accent) 35%, transparent), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+input[type="range"] {
+  accent-color: var(--c-accent);
+}
