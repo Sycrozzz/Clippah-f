@@ -33,24 +33,94 @@ jobs:
       - name: Prepare desktop app files
         run: npm run desktop:prepare
 
+      
       - name: Download portable PostgreSQL for Windows
         shell: pwsh
         run: |
           $version = '16.4'
           $archive = Join-Path $env:RUNNER_TEMP 'postgresql-binaries.zip'
           $extract = Join-Path $env:RUNNER_TEMP 'postgresql-binaries'
+
           New-Item -ItemType Directory -Force -Path $extract | Out-Null
-          Invoke-WebRequest "https://get.enterprisedb.com/postgresql/postgresql-$version-1-windows-x64-binaries.zip" -OutFile $archive
+
+          Invoke-WebRequest `
+            "https://get.enterprisedb.com/postgresql/postgresql-$version-1-windows-x64-binaries.zip" `
+            -OutFile $archive
+
           Expand-Archive -Path $archive -DestinationPath $extract -Force
-          $initdb = Get-ChildItem -Path $extract -Filter initdb.exe -Recurse | Select-Object -First 1
-          if (-not $initdb) { throw 'initdb.exe was not found in the PostgreSQL archive.' }
-          $pgRoot = Split-Path (Split-Path $initdb.FullName -Parent) -Parent
+
+          $initdb = Get-ChildItem -Path $extract -Filter initdb.exe -Recurse |
+            Select-Object -First 1
+
+          if (-not $initdb) {
+            throw 'PostgreSQL initdb.exe was not found.'
+          }
+
+          # The PostgreSQL root is the parent of the bin directory.
+          $pgBin = Split-Path $initdb.FullName -Parent
+          $pgRoot = Split-Path $pgBin -Parent
+
+          Remove-Item 'desktop/postgres' -Recurse -Force -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path 'desktop/postgres' | Out-Null
-          Copy-Item (Join-Path $pgRoot '*') 'desktop/postgres' -Recurse -Force
-          if (-not (Test-Path 'desktop/postgres/bin/pg_ctl.exe')) { throw 'PostgreSQL binaries were not copied correctly.' }
+
+          Copy-Item "$pgRoot/*" 'desktop/postgres' -Recurse -Force
+
+          $required = @(
+            'bin/initdb.exe',
+            'bin/pg_ctl.exe',
+            'bin/postgres.exe',
+            'bin/psql.exe',
+            'bin/createdb.exe'
+          )
+
+          foreach ($file in $required) {
+            $path = Join-Path 'desktop/postgres' $file
+
+            if (-not (Test-Path $path)) {
+              throw "Missing PostgreSQL executable: $path"
+            }
+
+            Write-Host "Verified: $path"
+          }
+
+          if (-not (Test-Path 'desktop/postgres/share')) {
+            throw 'PostgreSQL share directory is missing.'
+          }
+
+          if (-not (Test-Path 'desktop/postgres/lib')) {
+            throw 'PostgreSQL lib directory is missing.'
+          }
+
+          Write-Host 'PostgreSQL bundle is ready.'
 
       - name: Build installer and portable executable
         run: npm run desktop:dist
+        
+      - name: Verify packaged PostgreSQL
+        shell: pwsh
+        run: |
+          $pgBin = 'dist/win-unpacked/resources/postgres/bin'
+
+          $required = @(
+            'initdb.exe',
+            'pg_ctl.exe',
+            'postgres.exe',
+            'psql.exe',
+            'createdb.exe'
+          )
+
+          foreach ($file in $required) {
+            $path = Join-Path $pgBin $file
+
+            if (-not (Test-Path $path)) {
+              throw "PostgreSQL was not packaged correctly: $path"
+            }
+
+            Write-Host "Packaged successfully: $path"
+          }
+
+          Write-Host 'All PostgreSQL executables are inside the packaged app.'
+
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
