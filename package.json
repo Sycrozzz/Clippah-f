@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",
-    "desktop:dist": "electron-builder --win nsis portable --x64",
+    "desktop:dist": "electron-builder --win nsis portable --x64 --publish never",
     "desktop:release": "npm run build && npm run desktop:prepare && npm run desktop:dist"
   },
   "dependencies": {
