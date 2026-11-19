@@ -4,6 +4,21 @@ const fs = require('node:fs');
 const net = require('node:net');
 const path = require('node:path');
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+  });
+}
+
 const PRODUCT_NAME = 'Clippahh';
 if (process.env.PORTABLE_EXECUTABLE_DIR) {
   app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'Clippahh-data'));
@@ -88,8 +103,20 @@ async function waitFor(check, label, timeoutMs = 45000) {
 async function startDatabase() {
   const bin = resource('postgres', 'bin');
 
-  const dataDir = path.join(app.getPath('userData'), 'postgres');
-  const logFile = path.join(app.getPath('userData'), 'postgres.log');
+  const userDataDir = app.getPath('userData');
+
+const dataDir = path.join(userDataDir, 'postgres');
+
+const logsDir = path.join(userDataDir, 'logs');
+
+fs.mkdirSync(logsDir, {
+  recursive: true
+});
+
+const logFile = path.join(
+  logsDir,
+  `postgres-${process.pid}.log`
+);
 
   const initdb = path.join(bin, 'initdb.exe');
   const pgCtl = path.join(bin, 'pg_ctl.exe');
@@ -126,6 +153,13 @@ async function startDatabase() {
     ], { env: databaseEnv });
   }
 
+  const status = await run(
+  pgCtl,
+  ['-D', dataDir, 'status'],
+  { env: databaseEnv }
+).then(() => true).catch(() => false);
+
+if (!status) {
   await run(pgCtl, [
     '-D', dataDir,
     '-l', logFile,
@@ -133,8 +167,9 @@ async function startDatabase() {
     '-w',
     'start'
   ], { env: databaseEnv });
-
-  postgresProcess = { pgCtl, dataDir };
+} else {
+  console.log('PostgreSQL is already running.');
+}
 
   const env = {
     ...databaseEnv,
